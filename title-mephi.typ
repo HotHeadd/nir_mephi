@@ -1,9 +1,5 @@
-#import "../component/title.typ": (
-  approved-and-agreed-fields,
-  detailed-sign-field,
-  per-line,
-)
-#import "../utils.typ": fetch-field, sign-field
+#import "@preview/modern-g7-32:0.2.0": custom-title-template
+#import custom-title-template: *
 
 #let arguments(..args, year: auto) = {
   let args = args.named()
@@ -12,116 +8,67 @@
     ("*full", "short"),
     hint: "организации",
   )
-  args.approved-by = fetch-field(
-    args.at("approved-by", default: none),
-    ("name*", "position*", "year"),
-    default: (year: auto),
-    hint: "согласования",
-  )
-  args.agreed-by = fetch-field(
-    args.at("agreed-by", default: none),
-    ("name*", "position*", "year"),
-    default: (year: auto),
-    hint: "утверждения",
-  )
-  args.stage = fetch-field(
-    args.at("stage", default: none),
-    ("type*", "num"),
-    hint: "этапа",
-  )
   args.manager = fetch-field(
     args.at("manager", default: none),
-    ("position*", "name*", "title"),
-    default: (title: "Руководитель НИР,"),
+    ("position*", "name*"),
     hint: "руководителя",
   )
-
-  if args.approved-by.year == auto {
-    args.approved-by.year = year
-  }
-  if args.agreed-by.year == auto {
-    args.agreed-by.year = year
-  }
   return args
 }
 
+#let unbreak-name(name) = {
+  if name == none { return }
+  return name.replace(" ", "\u{00A0}")
+}
+
+#let custom-sign-field(name, position, label: none, part: none, details: "подпись, дата", is-student: false) = {
+  let part-cell = []
+  if part != none {
+    part-cell = table.cell(align: top)[(#small-text[#part])]
+  }
+  let position-text = if is-student { "Группа " + position } else { position }
+  set par(justify: false)
+  table(
+    stroke: none,
+    inset: (x: 0pt, y: 3pt),
+    columns: (5fr, 1fr, 3fr, 1fr, 3fr),
+    table.cell(colspan: 5)[#if label != none { label }],
+    [#position-text], [], [], [], table.cell(align: bottom)[#unbreak-name(name)],
+    [], [], table.cell(align: center)[], [], part-cell
+  )
+}
+
+
 #let template(
   ministry: none,
-  organization: (full: none, short: none),
-  udk: none,
-  research-number: none,
-  report-number: none,
-  approved-by: (name: none, position: none, year: auto),
-  agreed-by: (name: none, position: none, year: none),
-  report-type: "Отчёт",
-  about: none,
-  bare-subject: false,
-  research: none,
+  university: none,
+  department: none,
+  step-number: none,
   subject: none,
-  part: none,
-  stage: none,
-  federal: none,
-  manager: (position: none, name: none, title: none),
-  performer: none,
+  group: none,
+  manager: (position: none, name: none),
+  student: (group: none, name: none),
+  city: none,
+  year: auto,
+  ..rest,
 ) = {
-  per-line(
-    force-indent: true,
-    ministry,
-    (value: upper(organization.full), when-present: organization.full),
-    (value: upper[(#organization.short)], when-present: organization.short),
-  )
-
-  per-line(
-    force-indent: true,
-    align: right,
-    (value: [УДК: #udk], when-present: udk),
-    (value: [Рег. №: #research-number], when-present: research-number),
-    (value: [Рег. № ИКРБС: #report-number], when-present: report-number),
-  )
-
-  approved-and-agreed-fields(approved-by, agreed-by)
-
-  per-line(
-    align: center,
-    indent: 2fr,
-    (value: upper(report-type), when-present: report-type),
-    (value: upper(about), when-present: about),
-    (value: research, when-present: research),
-    (value: [по теме:], when-rule: not bare-subject),
-    (value: upper(subject), when-present: subject),
-    (
-      value: [(#stage.type)],
-      when-rule: (stage.type != none and stage.num == none),
-    ),
-    (
-      value: [(#stage.type, этап #stage.num)],
-      when-present: (stage.type, stage.num),
-    ),
-    (value: [\ Книга #part], when-present: part),
-    (federal),
-  )
-
-  if manager.name != none {
-    let title = if type(manager.title) == str and manager.title != "" {
-      manager.title + linebreak()
-    } else {
-      none
-    }
-    sign-field(manager.at("name"), [#title #manager.at("position")])
-  }
-
-  if performer != none {
-    let title = if type(performer.title) == str and manager.title != "" {
-      performer.title + linebreak()
-    } else {
-      none
-    }
-    sign-field(
-      performer.at("name", default: none),
-      [#title #performer.at("position", default: none)],
-      part: performer.at("part", default: none),
-    )
-  }
-
-  v(0.5fr)
+  align(center)[
+    #upper(ministry)
+    #v(0.15fr)
+    #university
+    #v(0.15fr)
+    #department
+    #v(1fr)
+    #text([Отчет о научно-исследовательской работе\ по этапу №#step-number])
+    #v(0.2fr)
+    #text([по темe:])
+    #linebreak()
+    #upper([#subject])
+    #v(0.4fr)
+    #v(1fr)
+  ]
+  custom-sign-field(student.name, student.group, label: "Студент:", is-student: true)
+  v(0.1fr)
+  custom-sign-field(manager.name, manager.position, label: "Научный руководитель:")
+  v(0.6fr)
 }
