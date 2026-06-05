@@ -1,3 +1,4 @@
 {
-	"tinymist.outputPath": "$dir/assets/$name"
-}
+	"tinymist.copyAndPaste": "enable",
+	"tinymist.onPaste": "$root/part2/assets"
+}	

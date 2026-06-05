@@ -26,16 +26,6 @@
   below: 1em
 )
 
-#let special-headings = ("Заключение", "Термины и определения", "Введение", "Перечень сокращений и обозначений", "Список использованных источников")
-
-#show outline.entry.where(level: 1) : it => {
-  if it.element.body in special-headings [
-    #upper(it)
-  ] else [
-    #it
-  ]
-}
-
 #show figure.caption: it => text(size: 12pt)[#it]
 
 #set text(
