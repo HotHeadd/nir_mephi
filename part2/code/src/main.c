@@ -1,6 +1,4 @@
-/*
- * Точка входа: разбор аргументов командной строки, запуск агента.
- */
+// Точка входа: разбор аргументов командной строки, запуск агента.
 #include "agent.h"
 #include "memwatch.h"
 #include <stdio.h>
@@ -11,19 +9,21 @@ static void usage(const char *prog) {
     fprintf(stderr,
         "memwatch — опытный образец модуля перехвата записи в память\n\n"
         "Использование:\n"
-        "  %s --symbol ИМЯ --len N [--log ФАЙЛ] -- ПРОГРАММА [АРГ...]\n"
+        "  %s --symbol ИМЯ [--len N] [--log ФАЙЛ] -- ПРОГРАММА [АРГ...]\n"
         "  %s --addr 0xADDR --len N [--log ФАЙЛ] -- ПРОГРАММА [АРГ...]\n\n"
         "  --symbol ИМЯ   охраняемая область задаётся символом\n"
         "  --addr 0xA     либо абсолютным адресом\n"
-        "  --len N        размер области в байтах (по умолчанию 8)\n"
-        "  --log ФАЙЛ     журнал событий (по умолчанию stderr)\n",
+        "  --len N        размер области в байтах; для --symbol необязателен\n"
+        "                 (берётся из таблицы символов ELF), для --addr нужен\n"
+        "  --log ФАЙЛ     журнал событий (по умолчанию stderr)\n"
+        "  --allow Ф1,Ф2  функции, запись из которых легитимна (не нарушение)\n",
         prog, prog);
 }
 
 int main(int argc, char **argv) {
     agent_config_t cfg;
     memset(&cfg, 0, sizeof(cfg));
-    cfg.guard.length = 8;
+    cfg.guard.length = 0;   // 0 = не задано; для --symbol размер берётся из ELF
 
     int i = 1;
     for (; i < argc; i++) {
@@ -35,6 +35,19 @@ int main(int argc, char **argv) {
             cfg.guard.length = (size_t)strtoull(argv[++i], NULL, 0);
         } else if (strcmp(argv[i], "--log") == 0 && i + 1 < argc) {
             cfg.log_path = argv[++i];
+        } else if (strcmp(argv[i], "--allow") == 0 && i + 1 < argc) {
+            // список функций через запятую; разбиваем на месте в копии строки
+            char *list = strdup(argv[++i]);
+            int cap = 8;
+            cfg.allow_funcs = malloc(cap * sizeof(char *));
+            cfg.allow_count = 0;
+            for (char *tok = strtok(list, ","); tok; tok = strtok(NULL, ",")) {
+                if (cfg.allow_count == cap) {
+                    cap *= 2;
+                    cfg.allow_funcs = realloc(cfg.allow_funcs, cap * sizeof(char *));
+                }
+                cfg.allow_funcs[cfg.allow_count++] = tok;
+            }
         } else if (strcmp(argv[i], "--") == 0) {
             i++;
             break;

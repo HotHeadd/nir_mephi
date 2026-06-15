@@ -1,7 +1,7 @@
 /*
- * Атрибуция: привязка адреса инструкции-инициатора к модулю и функции.
- * Реализует алгоритм методики: /proc/<pid>/maps -> модуль+смещение -> ELF-символ.
- */
+Атрибуция: привязка адреса инструкции-инициатора к модулю и функции.
+Реализует алгоритм методики: /proc/<pid>/maps -> модуль+смещение -> ELF-символ.
+*/
 #include "attrib.h"
 
 #include <stdio.h>
@@ -25,13 +25,13 @@ int attrib_read_maps(pid_t pid, map_entry_t *out, int max) {
         memset(&e, 0, sizeof(e));
         char perms[5] = {0};
         int consumed = 0;
-        /* start-end perms offset dev inode path */
+        // start-end perms offset dev inode path
         int got = sscanf(line, "%" SCNxPTR "-%" SCNxPTR " %4s %" SCNxPTR " %*s %*s %n",
                          &e.start, &e.end, perms, &e.file_offset, &consumed);
         if (got < 4) continue;
         memcpy(e.perms, perms, 4);
 
-        /* путь модуля — остаток строки после inode (если есть) */
+        // путь модуля — остаток строки после inode (если есть)
         if (consumed > 0) {
             char *p = line + consumed;
             char *nl = strchr(p, '\n');
@@ -53,10 +53,10 @@ const map_entry_t *attrib_find_map(const map_entry_t *maps, int n, uintptr_t add
 }
 
 /*
- * Вычисляем базовый адрес загрузки модуля: минимальный start среди всех
- * отображений с тем же путём. Нужен, чтобы перевести виртуальный адрес в
- * смещение, не зависящее от ASLR, и обратно.
- */
+Базовый адрес загрузки модуля: минимальный start среди всех отображений с тем
+же путём. Нужен, чтобы перевести виртуальный адрес в смещение, не зависящее от
+ASLR, и обратно.
+*/
 static uintptr_t module_base(const map_entry_t *maps, int n, const char *path) {
     uintptr_t base = (uintptr_t)-1;
     for (int i = 0; i < n; i++)
@@ -66,11 +66,11 @@ static uintptr_t module_base(const map_entry_t *maps, int n, const char *path) {
 }
 
 /*
- * Читаем ELF-файл модуля и ищем функцию по mod_off — смещению внутри модуля
- * (rip - base). st_value символов приводим к тому же смещению:
- *   ET_EXEC: st_value — абсолютный VA, смещение = st_value - base;
- *   ET_DYN : st_value уже является смещением от базы.
- */
+Читаем ELF-файл модуля и ищем функцию по mod_off — смещению внутри модуля
+(rip - base). st_value символов приводим к тому же смещению:
+  ET_EXEC: st_value — абсолютный VA, смещение = st_value - base;
+  ET_DYN : st_value уже является смещением от базы.
+*/
 static int elf_lookup_symbol_by_offset(const char *module_path, uint64_t mod_off,
                                         int et_dyn, uintptr_t base,
                                         char *out_name, size_t out_sz) {
@@ -82,7 +82,6 @@ static int elf_lookup_symbol_by_offset(const char *module_path, uint64_t mod_off
     if (read(fd, &eh, sizeof(eh)) != (ssize_t)sizeof(eh)) { close(fd); return 0; }
     if (memcmp(eh.e_ident, ELFMAG, SELFMAG) != 0) { close(fd); return 0; }
 
-    /* читаем заголовки секций */
     Elf64_Shdr *sh = calloc(eh.e_shnum, sizeof(Elf64_Shdr));
     if (!sh) { close(fd); return 0; }
     if (pread(fd, sh, eh.e_shnum * sizeof(Elf64_Shdr), eh.e_shoff) !=
@@ -105,7 +104,7 @@ static int elf_lookup_symbol_by_offset(const char *module_path, uint64_t mod_off
             for (int s = 0; s < cnt; s++) {
                 if (ELF64_ST_TYPE(syms[s].st_info) != STT_FUNC) continue;
                 if (syms[s].st_value == 0 || syms[s].st_size == 0) continue;
-                /* смещение символа от базы модуля */
+                // смещение символа от базы модуля
                 uint64_t sym_off = et_dyn ? syms[s].st_value
                                           : (syms[s].st_value - base);
                 if (mod_off >= sym_off && mod_off < sym_off + syms[s].st_size) {
@@ -126,17 +125,19 @@ static int elf_lookup_symbol_by_offset(const char *module_path, uint64_t mod_off
     return ok;
 }
 
-uintptr_t attrib_resolve_symbol(const map_entry_t *maps, int n, const char *symbol) {
-    /* Ищем символ по имени во всех модулях с непустым путём. Возвращаем
-     * фактический виртуальный адрес в адресном пространстве цели. */
+uintptr_t attrib_resolve_symbol(const map_entry_t *maps, int n, const char *symbol,
+                                size_t *out_size) {
+    // Ищем символ по имени во всех модулях с непустым путём. Возвращаем
+    // фактический виртуальный адрес в адресном пространстве цели.
+    if (out_size) *out_size = 0;
     char seen[64][ATTRIB_NAME_MAX];
     int seen_n = 0;
 
     for (int i = 0; i < n; i++) {
         if (!maps[i].path[0]) continue;
-        if (maps[i].path[0] == '[') continue;  /* [heap], [stack] и т.п. */
+        if (maps[i].path[0] == '[') continue;   // [heap], [stack] и т.п.
 
-        /* пропускаем уже обработанные модули */
+        // пропускаем уже обработанные модули
         int dup = 0;
         for (int k = 0; k < seen_n; k++)
             if (strcmp(seen[k], maps[i].path) == 0) { dup = 1; break; }
@@ -176,6 +177,7 @@ uintptr_t attrib_resolve_symbol(const map_entry_t *maps, int n, const char *symb
                     if (strcmp(nm, symbol) == 0 && syms[s].st_value != 0) {
                         result = et_dyn ? (base + syms[s].st_value)
                                         : (uintptr_t)syms[s].st_value;
+                        if (out_size) *out_size = (size_t)syms[s].st_size;
                         break;
                     }
                 }
@@ -196,13 +198,13 @@ int attrib_resolve_addr(const map_entry_t *maps, int n, uintptr_t rip,
     const map_entry_t *m = attrib_find_map(maps, n, rip);
     if (!m) return -1;
 
-    /* модуль и смещение */
+    // модуль и смещение
     const char *path = m->path[0] ? m->path : "[anonymous]";
     strncpy(res->module, path, sizeof(res->module) - 1);
     uintptr_t base = m->path[0] ? module_base(maps, n, m->path) : m->start;
     res->module_offset = rip - base;
 
-    /* попытка разрешить функцию по ELF */
+    // попытка разрешить функцию по ELF
     if (m->path[0] && m->path[0] != '[') {
         int fd = open(m->path, O_RDONLY);
         if (fd >= 0) {
@@ -210,7 +212,7 @@ int attrib_resolve_addr(const map_entry_t *maps, int n, uintptr_t rip,
             if (read(fd, &eh, sizeof(eh)) == (ssize_t)sizeof(eh) &&
                 memcmp(eh.e_ident, ELFMAG, SELFMAG) == 0) {
                 int et_dyn = (eh.e_type == ET_DYN);
-                /* всегда ищем по смещению инструкции внутри модуля */
+                // всегда ищем по смещению инструкции внутри модуля
                 char fname[ATTRIB_NAME_MAX] = {0};
                 if (elf_lookup_symbol_by_offset(m->path, res->module_offset,
                                                 et_dyn, base,

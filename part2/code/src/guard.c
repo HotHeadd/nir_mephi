@@ -1,6 +1,4 @@
-/*
- * Установка/снятие охраны над объявленной областью и разрешение её адреса.
- */
+// Установка/снятие охраны над объявленной областью и разрешение её адреса.
 #include "guard.h"
 #include "inject.h"
 #include "attrib.h"
@@ -21,11 +19,12 @@ int guard_resolve(pid_t pid, const guard_spec_t *spec, guard_region_t *region) {
     memset(region, 0, sizeof(*region));
 
     uintptr_t addr = 0;
+    size_t sym_size = 0;
     if (spec->symbol_name) {
         map_entry_t maps[MAX_MAPS];
         int n = attrib_read_maps(pid, maps, MAX_MAPS);
         if (n <= 0) return -1;
-        addr = attrib_resolve_symbol(maps, n, spec->symbol_name);
+        addr = attrib_resolve_symbol(maps, n, spec->symbol_name, &sym_size);
         if (!addr) {
             fprintf(stderr, "guard_resolve: символ '%s' не найден\n", spec->symbol_name);
             return -1;
@@ -39,9 +38,16 @@ int guard_resolve(pid_t pid, const guard_spec_t *spec, guard_region_t *region) {
 
     size_t ps = page_size_cached();
     region->addr = addr;
-    region->length = spec->length ? spec->length : 8;
+    // длина области: явно заданная (--len) важнее всего; иначе размер символа
+    // из таблицы ELF; иначе дефолт 8 байт.
+    if (spec->length)
+        region->length = spec->length;
+    else if (sym_size)
+        region->length = sym_size;
+    else
+        region->length = 8;
     region->page_addr = addr & ~(ps - 1);
-    /* сколько байт страниц покрывает область [addr, addr+length) */
+    // сколько байт страниц покрывает область [addr, addr+length)
     uintptr_t last = addr + region->length - 1;
     uintptr_t last_page = last & ~(ps - 1);
     region->page_span = (last_page - region->page_addr) + ps;
@@ -49,13 +55,13 @@ int guard_resolve(pid_t pid, const guard_spec_t *spec, guard_region_t *region) {
 }
 
 int guard_protect(pid_t pid, uintptr_t syscall_insn, const guard_region_t *region) {
-    /* снять право записи: страницы области -> только чтение */
+    // снять право записи: страницы области -> только чтение
     return inject_mprotect(pid, syscall_insn,
                            region->page_addr, region->page_span, PROT_READ);
 }
 
 int guard_unprotect(pid_t pid, uintptr_t syscall_insn, const guard_region_t *region) {
-    /* временно вернуть запись для одиночного шага */
+    // временно вернуть запись для одиночного шага
     return inject_mprotect(pid, syscall_insn,
                            region->page_addr, region->page_span,
                            PROT_READ | PROT_WRITE);
